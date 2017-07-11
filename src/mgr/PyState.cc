@@ -334,6 +334,13 @@ get_counter(PyObject *self, PyObject *args)
       handle, svc_name, svc_id, counter_path);
 }
 
+static PyObject *
+ceph_get_osdmap(PyObject *self, PyObject *args)
+{
+  return global_handle->get_osdmap();
+}
+
+
 PyMethodDef CephStateMethods[] = {
     {"get", ceph_state_get, METH_VARARGS,
      "Get a cluster object"},
@@ -361,6 +368,8 @@ PyMethodDef CephStateMethods[] = {
      "Get the ceph version of this process"},
     {"get_context", ceph_get_context, METH_NOARGS,
       "Get a CephContext* in a python capsule"},
+    {"get_osdmap", ceph_get_osdmap, METH_NOARGS,
+     "Get an OSDMap handle"},
     {NULL, NULL, 0, NULL}
 };
 
