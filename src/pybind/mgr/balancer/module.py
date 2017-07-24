@@ -114,6 +114,17 @@ class Module(MgrModule):
     def do_osd_weight(self):
         self.log.info('do_osd_weight')
 
+        # Reweight any over-utilized OSD
+        result = CommandResult('balancer')
+        self.send_command(result, 'mgr', '', json.dumps({
+            'prefix': 'osd reweight-by-utilization',
+        }), 'balancer')
+        r, outb, outs = result.wait()
+        if r != 0:
+            self.log.error(outs)
+            break;
+
+
     def handle_balancer_crushmap(self, cmd):
         # Update python-crush
         import commands
@@ -140,6 +151,7 @@ class Module(MgrModule):
                     output += "Network error. "
                 output += "Exiting without rebalancing. "
                 return 0, "", output
+
         return 0, "", output
 
     def handle_command(self, cmd):
