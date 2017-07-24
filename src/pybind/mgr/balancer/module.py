@@ -16,13 +16,18 @@ default_max_misplaced = .03   # max ratio of pgs replaced at a time
 class Module(MgrModule):
     run = True
 
+    COMMANDS = [
+        {
+            "cmd": "balancer crushmap "
+            "name=bucket,type=CephString,req=false",
+            "desc": "Optimize crushmap of OSDs within a bucket, or all",
+            "perm": "r"
+        },
+    ]
+
     def __init__(self, *args, **kwargs):
         super(Module, self).__init__(*args, **kwargs)
         self.event = Event()
-
-    def handle_command(self, command):
-        return (-errno.EINVAL, '',
-                "Command not found '{0}'".format(command['prefix']))
 
     def shutdown(self):
         self.log.info('Stopping')
@@ -105,7 +110,45 @@ class Module(MgrModule):
     def do_crush(self, compat):
         self.log.info('do_crush compat=%b' % compat)
         
+
     def do_osd_weight(self):
         self.log.info('do_osd_weight')
 
+    def handle_balancer_crushmap(self, cmd):
+        # Update python-crush
+        import commands
+        ret = commands.getstatusoutput("pip install crush --upgrade")
+
+        # Check for errors
+        if ret[0]:
+            ret_out = str(ret[1])
+            require_sudo = ret_out.find("Permission denied:")
+            import imp
+            try:
+                imp.find_module('crush')
+                output = "Failed to update crush. "
+                if require_sudo != -1:
+                    output += "To upgrade, use 'sudo pip install crush --upgrade' "
+                elif ret_out.find("ConnectionError") != -1:
+                    output += "Network error."
+                output += "Using existing crush library. "
+            except:
+                output = "Crush library couldn't be installed. "
+                if req_sudo != -1:
+                    output += "Please use 'sudo pip install crush --upgrade'. "
+                elif ret_out.find("ConnectionError") != -1:
+                    output += "Network error. "
+                output += "Exiting without rebalancing. "
+                return 0, "", output
+        return 0, "", output
+
+    def handle_command(self, cmd):
+        self.log.error("handle_command")
+
+        if cmd['prefix'] == "balancer crushmap":
+            return self.handle_balancer_crushmap(cmd)
+        else:
+            # mgr should respect our self.COMMANDS and not call us for
+            # any prefix we don't advertise
+            raise NotImplementedError(cmd['prefix'])
         
