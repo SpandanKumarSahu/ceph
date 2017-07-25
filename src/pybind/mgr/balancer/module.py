@@ -19,7 +19,12 @@ class Module(MgrModule):
     COMMANDS = [
         {
             "cmd": "balancer crushmap "
-            "name=bucket,type=CephString,req=false",
+            "name=pool_id,type=CephInt,req=true "
+            "name=rule,type=CephString,req=true "
+            "name=choose_args,type=CephInt,req=false "
+            "name=multithread,type=CephString,req=false "
+            "name=replication_count,type=CephInt,req=false "
+            "name=step,type=CephInt,req=false",
             "desc": "Optimize crushmap of OSDs within a bucket, or all",
             "perm": "r"
         },
@@ -58,7 +63,7 @@ class Module(MgrModule):
                 elif mode == 'crush-compat':
                     self.do_crush(compat=True)
                 elif mode == 'osd_weight':
-                    self.osd_weight()
+                    self.do_osd_weight()
                 elif mode == 'none':
                     self.log.info('Idle')
                 else:
@@ -109,7 +114,7 @@ class Module(MgrModule):
 
     def do_crush(self, compat):
         self.log.info('do_crush compat=%b' % compat)
-        
+
 
     def do_osd_weight(self):
         self.log.info('do_osd_weight')
@@ -151,6 +156,63 @@ class Module(MgrModule):
                     output += "Network error. "
                 output += "Exiting without rebalancing. "
                 return 0, "", output
+
+        # Get crushmap
+        crushmap = self.get('osd_map_crush')
+
+        # Save it in JSON format
+        import json
+        with open('temp_crushmap.json', 'w') as outfile:
+            json.dump(crushmap, outfile)
+
+        # Use python-crush to optimize the crushmap
+        from crush.ceph import Ceph
+
+        # Relatively few samples
+        pg_num = 2048
+        if cmd['choose_args'] == None:
+            choose_args = 0
+        if cmd['steps'] == None:
+            steps = 64
+
+        '''
+        For clusters before Luminous, a pool can be rebalanced provided it is
+        the sole user of the crush rule. If two pools use the same crush rule,
+        rebalancing one of them will have an impact on the other.
+        '''
+
+        # [TODO]: Make it  dynamic
+        # [TODO]: Include more documentation
+
+        Ceph().main([
+            'optimize',
+            '--no-multithread',
+            '--crushmap', 'temp_crushmap.json',
+            '--out-path', 'optimized_crushmap.txt',
+            '--out-format', 'txt',
+            '--pool', '1',
+            '--pg-num', '2048',
+            '--pgp-num', '2048',
+            '--rule', 'replicated_rule',
+            '--choose-args', '0',
+            '--step', '64',
+        ])
+
+        # Compile the crushmap
+        import os
+        os.system("crushtool -c optimized_crushmap.txt -o crushmap-new.bin")
+
+        # Set the optimized crushmap
+        result = CommandResult('balancer')
+        self.send_command(result, 'mon', '', json.dumps({
+            'prefix': 'osd setcrushmap',
+            'input': 'crushmap-new.bin'
+        }), 'balancer')
+        r, outb, outs = result.wait()
+
+        os.unlink('temp_crushmap.json')
+        os.unlink('optimized_crushmap.txt')
+        os.unlink('crushmap-new.bin')
 
         return 0, "", output
 
